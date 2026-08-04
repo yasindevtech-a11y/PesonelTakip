@@ -1,0 +1,40 @@
+name: APK Oluştur
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodları indir
+        uses: actions/checkout@v4
+
+      - name: Java kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Android SDK kur
+        uses: android-actions/setup-android@v3
+
+      - name: Gerekli Android paketlerini kur
+        run: |
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+
+      - name: Gradle kur
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: APK'yı derle
+        run: gradle assembleDebug --stacktrace
+
+      - name: APK'yı yükle (indirilebilir dosya)
+        uses: actions/upload-artifact@v4
+        with:
+          name: personel-takip-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
