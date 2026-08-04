@@ -25,13 +25,216 @@ jobs:
         run: |
           yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
 
+
       - name: Gradle kur
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
 
+      - name: index.html var mı kontrol et
+        run: |
+          if [ ! -f "index.html" ]; then
+            echo "HATA: Depo köküne (ana klasöre) index.html dosyası eklemelisin."
+            exit 1
+          fi
+
+
+      - name: Android proje iskeletini oluştur
+        run: |
+          mkdir -p app/src/main/java/com/personeltakip/app
+          mkdir -p app/src/main/assets/www
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+
+          cat > settings.gradle << 'EOF'
+          rootProject.name = "PersonelTakip"
+          include ':app'
+          EOF
+
+          cat > build.gradle << 'EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.2.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          cat > gradle.properties << 'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          cat > app/build.gradle << 'EOF'
+          apply plugin: 'com.android.application'
+
+          android {
+              namespace 'com.personeltakip.app'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.personeltakip.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Personel Takip"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:theme="@android:style/Theme.NoTitleBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/personeltakip/app/MainActivity.java << 'EOF'
+          package com.personeltakip.app;
+
+          import android.annotation.SuppressLint;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.view.ViewGroup;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+              private ValueCallback<Uri[]> filePathCallback;
+              private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
+
+              @SuppressLint("SetJavaScriptEnabled")
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+                  webView.setLayoutParams(new ViewGroup.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT));
+                  setContentView(webView);
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+
+                  webView.setWebViewClient(new WebViewClient());
+
+                  webView.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                          filePathCallback = callback;
+                          Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                          intent.addCategory(Intent.CATEGORY_OPENABLE);
+                          intent.setType("image/*");
+                          startActivityForResult(Intent.createChooser(intent, "Fotoğraf seç"), FILE_CHOOSER_REQUEST_CODE);
+                          return true;
+                      }
+                  });
+
+                  webView.loadUrl("file:///android_asset/www/index.html");
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+                      if (filePathCallback == null) return;
+                      Uri[] results = null;
+                      if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                          results = new Uri[]{ data.getData() };
+                      }
+                      filePathCallback.onReceiveValue(results);
+                      filePathCallback = null;
+                  } else {
+                      super.onActivityResult(requestCode, resultCode, data);
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+          echo "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" | base64 -d > /tmp/icon.png
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp /tmp/icon.png app/src/main/res/mipmap-$d/ic_launcher.png
+            cp /tmp/icon.png app/src/main/res/mipmap-$d/ic_launcher_round.png
+          done
+
+          cp index.html app/src/main/assets/www/index.html
+
+          echo "Proje iskeleti hazır."
+
+
       - name: APK'yı derle
-        run: gradle assembleDebug --stacktrace
+        run: |
+          gradle assembleDebug --stacktrace
+
+
+      - name: Derleme kontrolü (hata ayıklama için)
+        run: |
+          echo "--- dex icinde MainActivity var mi kontrolu ---"
+          unzip -p app/build/outputs/apk/debug/app-debug.apk classes.dex | strings | grep -i personeltakip || echo "UYARI: MainActivity dex icinde bulunamadi!"
+
 
       - name: APK'yı yükle (indirilebilir dosya)
         uses: actions/upload-artifact@v4
