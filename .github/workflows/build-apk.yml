@@ -267,6 +267,39 @@ jobs:
                                   Toast.makeText(context, "PDF kaydedilemedi: " + e.getMessage(), Toast.LENGTH_LONG).show());
                       }
                   }
+
+                  // Uygulama verisini (personel + izinler) telefonun uygulama klasörüne kaydeder —
+                  // internetsizken de son bilinen veri gösterilebilsin diye.
+                  @JavascriptInterface
+                  public void saveCache(String jsonData) {
+                      try {
+                          File file = new File(context.getFilesDir(), "data_cache.json");
+                          FileOutputStream fos = new FileOutputStream(file);
+                          fos.write(jsonData.getBytes("UTF-8"));
+                          fos.close();
+                      } catch (Exception e) {
+                          // önbellek opsiyonel bir hız/offline özelliği, sessizce geç
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public String loadCache() {
+                      try {
+                          File file = new File(context.getFilesDir(), "data_cache.json");
+                          if (!file.exists()) return "";
+                          java.io.FileInputStream fis = new java.io.FileInputStream(file);
+                          java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                          byte[] buffer = new byte[2048];
+                          int len;
+                          while ((len = fis.read(buffer)) != -1) {
+                              baos.write(buffer, 0, len);
+                          }
+                          fis.close();
+                          return baos.toString("UTF-8");
+                      } catch (Exception e) {
+                          return "";
+                      }
+                  }
               }
           }
           EOF
