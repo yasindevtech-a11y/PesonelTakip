@@ -645,12 +645,67 @@ async function loadPersonnel(){
   }));
 }
 
+// ---------- TELEFON ÖNBELLEĞİ (hızlı açılış + internetsiz son veri) ----------
+// Kaynak her zaman Supabase'tir; bu önbellek sadece açılışı hızlandırmak ve
+// internet olmadığında son bilinen veriyi göstermek içindir. Ekleme/düzenleme/silme
+// işlemleri hâlâ anlık internet gerektirir ve doğrudan Supabase'e yazılır.
+function saveCacheToDevice(){
+  if(window.AndroidBridge && window.AndroidBridge.saveCache){
+    try{
+      const payload = JSON.stringify({ personnel, leaveTypes, adminPassword, savedAt: new Date().toISOString() });
+      window.AndroidBridge.saveCache(payload);
+    }catch(e){ /* önbellek opsiyonel, sessizce geç */ }
+  }
+}
+function loadCacheFromDevice(){
+  if(window.AndroidBridge && window.AndroidBridge.loadCache){
+    try{
+      const raw = window.AndroidBridge.loadCache();
+      if(raw){
+        const cached = JSON.parse(raw);
+        if(cached && Array.isArray(cached.personnel)){
+          personnel = cached.personnel;
+          if(Array.isArray(cached.leaveTypes)) leaveTypes = cached.leaveTypes;
+          if(cached.adminPassword) adminPassword = cached.adminPassword;
+          return true;
+        }
+      }
+    }catch(e){ /* bozuk önbellek, yok say */ }
+  }
+  return false;
+}
+
 async function loadAll(){
   const container = document.getElementById("listContainer");
-  container.innerHTML = `<div class="empty-state"><div class="big">⏳</div><p>Veriler Supabase'ten yükleniyor...</p></div>`;
-  await Promise.all([loadLeaveTypes(), loadAdminPassword(), loadPersonnel()]);
-  renderHome();
+  const hadCache = loadCacheFromDevice();
+
+  if(hadCache){
+    renderHome(); // internet beklemeden son bilinen veriyi anında göster
+  } else {
+    container.innerHTML = `<div class="empty-state"><div class="big">⏳</div><p>Veriler Supabase'ten yükleniyor...</p></div>`;
+  }
+
+  try{
+    await Promise.all([loadLeaveTypes(), loadAdminPassword(), loadPersonnel()]);
+    renderHome();
+    saveCacheToDevice();
+  }catch(e){
+    if(!hadCache){
+      container.innerHTML = `<div class="empty-state"><div class="big">📡</div><p>İnternet bağlantısı yok ve telefonda kayıtlı veri bulunamadı.<br>Bağlantı kurulunca tekrar dene.</p></div>`;
+    }
+    // hadCache true ise ekranda zaten son bilinen (önbellekten gelen) veri duruyor
+  }
 }
+
+const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 dakikada bir arka planda kontrol et
+setInterval(async ()=>{
+  try{
+    await Promise.all([loadLeaveTypes(), loadAdminPassword(), loadPersonnel()]);
+    saveCacheToDevice();
+    if(personModalOverlay.classList.contains("open")) renderPersonModal();
+    if(document.getElementById("view-home").classList.contains("active")) renderHome();
+  }catch(e){ /* bağlantı yoksa sessizce geç, bir sonraki denemede tekrar dener */ }
+}, AUTO_REFRESH_INTERVAL_MS);
 
 // ---------- NAV ----------
 function showView(name){
