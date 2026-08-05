@@ -171,6 +171,14 @@
   .empty-state .big{font-size:34px; margin-bottom:10px;}
   .empty-state p{font-size:13.5px; line-height:1.5;}
 
+  .month-nav{
+    display:flex; align-items:center; justify-content:space-between;
+    margin:4px 0 10px;
+  }
+  .month-nav-label{
+    font-size:14.5px; font-weight:700; color:var(--text);
+  }
+
   /* ---------- Buttons ---------- */
   .btn{
     display:flex; align-items:center; justify-content:center; gap:6px;
@@ -280,6 +288,7 @@
     position:fixed; inset:0; background:rgba(0,0,0,0.55);
     z-index:40; display:none; align-items:flex-end; justify-content:center;
   }
+  #leaveModal{ z-index:50; } /* İzin ekleme/düzenleme penceresi her zaman personel popup'ının üstünde olmalı */
   .modal-overlay.open{display:flex;}
   .modal-sheet{
     width:100%; max-width:480px; background:var(--surface2);
@@ -478,19 +487,23 @@
 <!-- ADD LEAVE MODAL -->
 <div class="modal-overlay" id="leaveModal">
   <div class="modal-sheet">
-    <h3>Yeni İzin Ekle</h3>
+    <h3 id="lv_modal_title">Yeni İzin Ekle</h3>
     <div class="field">
       <label>İzin Türü</label>
       <select id="lv_type"></select>
     </div>
-    <div class="field">
+    <div class="field hidden" id="lv_date_row">
       <label>Tarih</label>
       <input type="date" id="lv_date">
     </div>
-    <div class="field-row" id="lv_days_row">
+    <div class="field-row" id="lv_range_row">
       <div class="field">
-        <label>Gün Sayısı</label>
-        <input type="number" id="lv_days" min="1" value="1">
+        <label>Başlangıç Tarihi</label>
+        <input type="date" id="lv_start_date">
+      </div>
+      <div class="field">
+        <label>Bitiş Tarihi</label>
+        <input type="date" id="lv_end_date">
       </div>
     </div>
     <div class="field-row hidden" id="lv_time_row">
@@ -535,6 +548,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
 // ---------- SUPABASE BAĞLANTISI ----------
 const SUPABASE_URL = "https://chqjmvztpkfliixaibht.supabase.co";
@@ -547,6 +562,11 @@ function isoToday(){ return new Date().toISOString().slice(0,10); }
 function addDays(dateStr, n){ const d = new Date(dateStr); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function fmt(dateStr){ if(!dateStr) return "-"; const [y,m,d]=dateStr.split("-"); return `${d}.${m}.${y}`; }
 function initials(name){ return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
+function leaveDurationText(l){
+  if(l.startTime && l.endTime) return `${l.startTime} - ${l.endTime}`;
+  if(l.days > 1) return `→ ${fmt(addDays(l.date, l.days-1))} (${l.days} gün)`;
+  return `${l.days} gün`;
+}
 
 let personnel = [];
 
@@ -697,6 +717,67 @@ function personCardEl(p){
   return card;
 }
 
+function leaveEntryCardEl(p, l){
+  const today = isoToday();
+  const endDate = l.startTime ? l.date : addDays(l.date, (l.days||1)-1);
+  const activeNow = l.startTime && l.endTime
+    ? (l.date===today)
+    : (today >= l.date && today <= endDate);
+  const card = document.createElement("div");
+  card.className = "p-card" + (activeNow ? " on-leave" : "");
+  card.innerHTML = `
+    <div class="avatar">${p.photo ? `<img src="${p.photo}">` : initials(p.name)}</div>
+    <div class="p-card-info">
+      <div class="p-card-name">${p.name}</div>
+      <div class="p-card-sub">${l.type} · ${fmt(l.date)}${l.days>1 ? ` → ${fmt(endDate)}` : ""}${l.startTime ? ` · ${l.startTime}-${l.endTime}` : ""}</div>
+    </div>
+    ${activeNow ? `<span class="status-chip leave">Şu an</span>` : ""}
+  `;
+  card.addEventListener("click", ()=> openDetail(p.id));
+  return card;
+}
+
+const MONTH_NAMES = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
+const _now = new Date();
+let homeViewYear = _now.getFullYear();
+let homeViewMonthIdx = _now.getMonth();
+
+function monthBounds(year, monthIdx){
+  const start = `${year}-${String(monthIdx+1).padStart(2,"0")}-01`;
+  const lastDay = new Date(year, monthIdx+1, 0).getDate();
+  const end = `${year}-${String(monthIdx+1).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+  return { start, end };
+}
+
+function leaveOverlapsRange(l, rangeStart, rangeEnd){
+  const lEnd = l.startTime ? l.date : addDays(l.date, (l.days||1)-1);
+  return l.date <= rangeEnd && lEnd >= rangeStart;
+}
+
+function collectMonthLeaveEntries(year, monthIdx){
+  const { start, end } = monthBounds(year, monthIdx);
+  let entries = [];
+  personnel.forEach(p=>{
+    p.leaves.forEach(l=>{
+      if(leaveOverlapsRange(l, start, end)) entries.push({ p, l });
+    });
+  });
+  entries.sort((a,b)=> a.l.date.localeCompare(b.l.date));
+  return entries;
+}
+
+function collectUpcomingLeaveEntries(){
+  const today = isoToday();
+  let entries = [];
+  personnel.forEach(p=>{
+    p.leaves.forEach(l=>{
+      if(l.date > today) entries.push({ p, l });
+    });
+  });
+  entries.sort((a,b)=> a.l.date.localeCompare(b.l.date));
+  return entries;
+}
+
 function sectionHeaderEl(text, count, danger){
   const el = document.createElement("div");
   el.className = "section-label";
@@ -733,9 +814,8 @@ function renderHome(){
     return;
   }
 
-  // Default view: badge-card warnings first, then today's leave list — all headers built dynamically
+  // Default view: yaka kartı uyarıları → ay bazlı izin takvimi → her zaman görünen yaklaşan izinler
   staticLabel.classList.add("hidden");
-  const onLeave = personnel.filter(p=>personLeaveStatus(p).onLeave);
   const badgeWarnings = personnel
     .filter(p=> badgeStatus(p).warn)
     .sort((a,b)=> badgeStatus(a).daysLeft - badgeStatus(b).daysLeft);
@@ -745,18 +825,51 @@ function renderHome(){
     badgeWarnings.forEach(p=> container.appendChild(personCardEl(p)));
   }
 
-  const leaveHeader = sectionHeaderEl("Bugün İzinde Olanlar", onLeave.length, false);
-  if(badgeWarnings.length>0) leaveHeader.style.marginTop = "18px";
-  container.appendChild(leaveHeader);
+  // Ay navigasyonu
+  const monthNav = document.createElement("div");
+  monthNav.className = "month-nav";
+  if(badgeWarnings.length>0) monthNav.style.marginTop = "18px";
+  monthNav.innerHTML = `
+    <div class="icon-btn" id="prevMonthBtn" style="width:34px;height:34px; font-size:18px;">‹</div>
+    <span class="month-nav-label">${MONTH_NAMES[homeViewMonthIdx]} ${homeViewYear}</span>
+    <div class="icon-btn" id="nextMonthBtn" style="width:34px;height:34px; font-size:18px;">›</div>
+  `;
+  container.appendChild(monthNav);
 
-  if(onLeave.length===0){
+  const monthEntries = collectMonthLeaveEntries(homeViewYear, homeViewMonthIdx);
+  const monthHeader = sectionHeaderEl("Bu Ayki İzinler", monthEntries.length, false);
+  monthHeader.style.marginTop = "6px";
+  container.appendChild(monthHeader);
+
+  if(monthEntries.length===0){
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.innerHTML = `<div class="big">🗂️</div><p>Bugün izinli personel bulunmuyor.<br>Herkes görevde.</p>`;
+    empty.style.padding = "24px";
+    empty.innerHTML = `<div class="big">🗂️</div><p>Bu ayda kayıtlı izin yok.</p>`;
     container.appendChild(empty);
-    return;
+  } else {
+    monthEntries.forEach(({p,l})=> container.appendChild(leaveEntryCardEl(p,l)));
   }
-  onLeave.forEach(p=> container.appendChild(personCardEl(p)));
+
+  document.getElementById("prevMonthBtn").addEventListener("click", ()=>{
+    homeViewMonthIdx--;
+    if(homeViewMonthIdx < 0){ homeViewMonthIdx = 11; homeViewYear--; }
+    renderHome();
+  });
+  document.getElementById("nextMonthBtn").addEventListener("click", ()=>{
+    homeViewMonthIdx++;
+    if(homeViewMonthIdx > 11){ homeViewMonthIdx = 0; homeViewYear++; }
+    renderHome();
+  });
+
+  // Yaklaşan izinler — hangi ay gezilirse gezilsin her zaman görünür
+  const upcoming = collectUpcomingLeaveEntries();
+  if(upcoming.length>0){
+    const upcomingHeader = sectionHeaderEl("🔜 Yaklaşan İzinler", upcoming.length, false);
+    upcomingHeader.style.marginTop = "18px";
+    container.appendChild(upcomingHeader);
+    upcoming.forEach(({p,l})=> container.appendChild(leaveEntryCardEl(p,l)));
+  }
 }
 document.getElementById("searchInput").addEventListener("input", renderHome);
 
@@ -914,10 +1027,33 @@ function renderPersonModal(){
       content.innerHTML = `<div class="section-label"><span>${type}</span><span class="count-pill">${entries.length}</span></div>` +
         entries.map(l=>`
           <div class="pm_leave_entry">
-            <span class="d">${fmt(l.date)}</span>
-            <span class="t">${l.startTime && l.endTime ? `${l.startTime} - ${l.endTime}` : `${l.days} gün`}</span>
+            <div>
+              <span class="d">${fmt(l.date)}</span>
+              <span class="t">${leaveDurationText(l)}</span>
+            </div>
+            ${isAdminAuthenticated ? `
+            <div style="display:flex; gap:6px;">
+              <button class="icon-btn pm-entry-edit" data-leave-id="${l.id}" style="width:28px;height:28px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="icon-btn pm-entry-del" data-leave-id="${l.id}" style="width:28px;height:28px; color:var(--red);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </button>
+            </div>` : ""}
           </div>
         `).join("");
+
+      if(isAdminAuthenticated){
+        content.querySelectorAll(".pm-entry-edit").forEach(btn=>{
+          btn.addEventListener("click", ()=>{
+            const leave = p.leaves.find(l=>l.id===Number(btn.dataset.leaveId));
+            openLeaveModal(p.id, leave);
+          });
+        });
+        content.querySelectorAll(".pm-entry-del").forEach(btn=>{
+          btn.addEventListener("click", ()=> deleteLeaveEntry(Number(btn.dataset.leaveId)));
+        });
+      }
     }
   }
 
@@ -932,60 +1068,233 @@ function renderPersonModal(){
   }
 }
 
-document.getElementById("pm_addLeaveBtn").addEventListener("click", openLeaveModal);
-// ---------- LEAVE MODAL ----------
+document.getElementById("pm_addLeaveBtn").addEventListener("click", ()=> openLeaveModal(currentDetailId, null));
+// ---------- LEAVE MODAL (ekleme + düzenleme) ----------
 const leaveModal = document.getElementById("leaveModal");
+let leaveModalPersonId = null;
+let editingLeaveId = null;
+
 function toggleLeaveModalFields(){
   const type = document.getElementById("lv_type").value;
   const hourly = isHourly(type);
-  document.getElementById("lv_days_row").classList.toggle("hidden", hourly);
+  document.getElementById("lv_date_row").classList.toggle("hidden", !hourly);
   document.getElementById("lv_time_row").classList.toggle("hidden", !hourly);
+  document.getElementById("lv_range_row").classList.toggle("hidden", hourly);
 }
-function openLeaveModal(){
+function openLeaveModal(personId, existingLeave){
   if(!isAdminAuthenticated){ return; }
+  leaveModalPersonId = personId;
+  editingLeaveId = existingLeave ? existingLeave.id : null;
+
   const sel = document.getElementById("lv_type");
   sel.innerHTML = leaveTypes.map(t=>`<option value="${t}">${t}</option>`).join("");
   sel.onchange = toggleLeaveModalFields;
-  document.getElementById("lv_date").value = isoToday();
-  document.getElementById("lv_days").value = 1;
-  document.getElementById("lv_start_time").value = "";
-  document.getElementById("lv_end_time").value = "";
+
+  document.getElementById("lv_modal_title").textContent = existingLeave ? "İzni Düzenle" : "Yeni İzin Ekle";
+  document.getElementById("lv_save").textContent = existingLeave ? "Güncelle" : "Ekle";
+
+  if(existingLeave){
+    sel.value = existingLeave.type;
+    document.getElementById("lv_date").value = existingLeave.date;
+    document.getElementById("lv_start_date").value = existingLeave.date;
+    document.getElementById("lv_end_date").value = addDays(existingLeave.date, (existingLeave.days||1)-1);
+    document.getElementById("lv_start_time").value = existingLeave.startTime || "";
+    document.getElementById("lv_end_time").value = existingLeave.endTime || "";
+  } else {
+    document.getElementById("lv_date").value = isoToday();
+    document.getElementById("lv_start_date").value = isoToday();
+    document.getElementById("lv_end_date").value = isoToday();
+    document.getElementById("lv_start_time").value = "";
+    document.getElementById("lv_end_time").value = "";
+  }
   toggleLeaveModalFields();
   leaveModal.classList.add("open");
 }
 document.getElementById("lv_cancel").addEventListener("click", ()=> leaveModal.classList.remove("open"));
 leaveModal.addEventListener("click", (e)=>{ if(e.target===leaveModal) leaveModal.classList.remove("open"); });
 document.getElementById("lv_save").addEventListener("click", async ()=>{
-  const p = personnel.find(x=>x.id===currentDetailId);
   const type = document.getElementById("lv_type").value;
-  const date = document.getElementById("lv_date").value;
-  if(!date){ alert("Lütfen tarih seçin."); return; }
+  let payload = { type };
 
-  let payload = { personnel_id: p.id, type, date };
   if(isHourly(type)){
+    const date = document.getElementById("lv_date").value;
+    if(!date){ alert("Lütfen tarih seçin."); return; }
     const startTime = document.getElementById("lv_start_time").value;
     const endTime = document.getElementById("lv_end_time").value;
     if(!startTime || !endTime){ alert("Lütfen başlangıç ve bitiş saatini girin."); return; }
     if(endTime <= startTime){ alert("Bitiş saati başlangıçtan sonra olmalı."); return; }
+    payload.date = date;
     payload.start_time = startTime;
     payload.end_time = endTime;
     payload.days = 0;
   } else {
-    payload.days = Number(document.getElementById("lv_days").value) || 1;
+    const startDate = document.getElementById("lv_start_date").value;
+    const endDate = document.getElementById("lv_end_date").value;
+    if(!startDate || !endDate){ alert("Lütfen başlangıç ve bitiş tarihini seçin."); return; }
+    if(endDate < startDate){ alert("Bitiş tarihi, başlangıç tarihinden önce olamaz."); return; }
+    const days = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+    payload.date = startDate;
+    payload.days = days;
+    payload.start_time = null;
+    payload.end_time = null;
   }
 
   const saveLvBtn = document.getElementById("lv_save");
-  saveLvBtn.disabled = true; saveLvBtn.textContent = "Ekleniyor...";
-  const { error } = await db.from("leaves").insert(payload);
-  saveLvBtn.disabled = false; saveLvBtn.textContent = "Ekle";
-  if(error){ alert("İzin eklenemedi: " + error.message); return; }
+  const busyLabel = editingLeaveId ? "Güncelleniyor..." : "Ekleniyor...";
+  saveLvBtn.disabled = true; saveLvBtn.textContent = busyLabel;
+
+  let error;
+  if(editingLeaveId){
+    ({ error } = await db.from("leaves").update(payload).eq("id", editingLeaveId));
+  } else {
+    payload.personnel_id = leaveModalPersonId;
+    ({ error } = await db.from("leaves").insert(payload));
+  }
+
+  saveLvBtn.disabled = false;
+  if(error){ alert((editingLeaveId ? "Güncellenemedi: " : "İzin eklenemedi: ") + error.message); return; }
 
   leaveModal.classList.remove("open");
+  editingLeaveId = null;
   currentDetailTab = type;
   await loadPersonnel();
-  renderPersonModal();
+  if(personModalOverlay.classList.contains("open")) renderPersonModal();
+  if(typeof renderLeaveRecordsList === "function") renderLeaveRecordsList();
   renderHome();
 });
+
+async function deleteLeaveEntry(leaveId){
+  if(!isAdminAuthenticated) return;
+  if(!confirm("Bu izin kaydını silmek istediğinize emin misiniz?")) return;
+  const { error } = await db.from("leaves").delete().eq("id", leaveId);
+  if(error){ alert("Silinemedi: " + error.message); return; }
+  await loadPersonnel();
+  if(personModalOverlay.classList.contains("open")) renderPersonModal();
+  if(typeof renderLeaveRecordsList === "function") renderLeaveRecordsList();
+  renderHome();
+}
+
+function renderLeaveRecordsList(){
+  const container = document.getElementById("lr_records_container");
+  const select = document.getElementById("lr_person_select");
+  if(!container || !select) return;
+  const p = personnel.find(x=>x.id===Number(select.value));
+  if(!p){
+    container.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Personel bulunamadı.</p></div>`;
+    return;
+  }
+  const entries = p.leaves.slice().sort((a,b)=> b.date.localeCompare(a.date));
+  if(entries.length===0){
+    container.innerHTML = `<div class="empty-state" style="padding:20px;"><p>${p.name} için henüz izin kaydı yok.</p></div>`;
+    return;
+  }
+  container.innerHTML = entries.map(l=>`
+    <div class="pm_leave_entry">
+      <div>
+        <span class="d">${fmt(l.date)}</span>
+        <span class="tag" style="margin:0 6px;">${l.type}</span>
+        <span class="t">${leaveDurationText(l)}</span>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="icon-btn lr-entry-edit" data-leave-id="${l.id}" style="width:28px;height:28px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="icon-btn lr-entry-del" data-leave-id="${l.id}" style="width:28px;height:28px; color:var(--red);">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join("");
+  container.querySelectorAll(".lr-entry-edit").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const leave = p.leaves.find(l=>l.id===Number(btn.dataset.leaveId));
+      openLeaveModal(p.id, leave);
+    });
+  });
+  container.querySelectorAll(".lr-entry-del").forEach(btn=>{
+    btn.addEventListener("click", ()=> deleteLeaveEntry(Number(btn.dataset.leaveId)));
+  });
+}
+
+// ---------- PDF RAPORU (Türkçe karakter destekli DejaVu Sans font gömülü) ----------
+const PDF_FONT_REGULAR = "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";
+const PDF_FONT_BOLD = "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";
+let pdfFontsRegistered = false;
+function registerPdfFonts(doc){
+  if(!pdfFontsRegistered){
+    doc.addFileToVFS("DejaVuSans.ttf", PDF_FONT_REGULAR);
+    doc.addFont("DejaVuSans.ttf", "DejaVuSans", "normal");
+    doc.addFileToVFS("DejaVuSans-Bold.ttf", PDF_FONT_BOLD);
+    doc.addFont("DejaVuSans-Bold.ttf", "DejaVuSans", "bold");
+    pdfFontsRegistered = true;
+  } else {
+    doc.addFileToVFS("DejaVuSans.ttf", PDF_FONT_REGULAR);
+    doc.addFont("DejaVuSans.ttf", "DejaVuSans", "normal");
+    doc.addFileToVFS("DejaVuSans-Bold.ttf", PDF_FONT_BOLD);
+    doc.addFont("DejaVuSans-Bold.ttf", "DejaVuSans", "bold");
+  }
+  doc.setFont("DejaVuSans", "normal");
+}
+
+function savePdfBridgeAware(doc, fileName){
+  if(window.AndroidBridge && window.AndroidBridge.savePdf){
+    const dataUri = doc.output("datauristring");
+    const base64 = dataUri.split(",")[1];
+    window.AndroidBridge.savePdf(base64, fileName);
+  } else {
+    doc.save(fileName);
+  }
+}
+
+function generateLeaveReportPdf(){
+  const start = document.getElementById("pdf_start").value;
+  const end = document.getElementById("pdf_end").value;
+  if(!start || !end){ alert("Lütfen başlangıç ve bitiş tarihini seçin."); return; }
+  if(end < start){ alert("Bitiş tarihi, başlangıç tarihinden önce olamaz."); return; }
+
+  let rows = [];
+  personnel.forEach(p=>{
+    p.leaves.forEach(l=>{
+      if(l.date >= start && l.date <= end){
+        rows.push([
+          p.name,
+          l.type,
+          fmt(l.date),
+          leaveDurationText(l)
+        ]);
+      }
+    });
+  });
+
+  if(rows.length === 0){ alert("Seçilen tarih aralığında hiç izin kaydı bulunamadı."); return; }
+  rows.sort((a,b)=> a[0].localeCompare(b[0], "tr") || a[2].localeCompare(b[2]));
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  registerPdfFonts(doc);
+
+  doc.setFont("DejaVuSans", "bold");
+  doc.setFontSize(15);
+  doc.text("Personel İzin Raporu", 14, 17);
+
+  doc.setFont("DejaVuSans", "normal");
+  doc.setFontSize(10);
+  doc.text(`Tarih aralığı: ${fmt(start)} - ${fmt(end)}`, 14, 24);
+  doc.text(`Oluşturulma tarihi: ${fmt(isoToday())}`, 14, 29);
+  doc.text(`Toplam kayıt: ${rows.length}`, 14, 34);
+
+  doc.autoTable({
+    startY: 40,
+    head: [["Personel", "İzin Türü", "Tarih", "Süre"]],
+    body: rows,
+    styles: { font: "DejaVuSans", fontSize: 9, cellPadding: 3 },
+    headStyles: { font: "DejaVuSans", fontStyle: "bold", fillColor: [62, 207, 142], textColor: [10, 23, 18] },
+    alternateRowStyles: { fillColor: [245, 247, 247] }
+  });
+
+  const fileName = `izin-raporu-${start}_${end}.pdf`;
+  savePdfBridgeAware(doc, fileName);
+}
 
 // ---------- ADMIN / AYARLAR ----------
 function openAdmin(){
@@ -1040,6 +1349,41 @@ function renderAdminPanel(){
     <div id="adminList" style="margin-bottom:20px;"></div>
 
     <div class="accordion" style="margin-bottom:14px;">
+      <div class="accordion-header" id="pdfAccordionHeader">
+        <span>İzin Raporu (PDF)</span>
+        <svg id="pdfAccordionChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="accordion-body hidden" id="pdfAccordionBody">
+        <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Seçtiğin tarih aralığında, tüm personelin kullandığı tüm izinleri (yıllık, mazeret, saatlik vb.) tek bir PDF'te listeler.</p>
+        <div class="field-row">
+          <div class="field">
+            <label>Başlangıç Tarihi</label>
+            <input type="date" id="pdf_start">
+          </div>
+          <div class="field">
+            <label>Bitiş Tarihi</label>
+            <input type="date" id="pdf_end">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" id="pdf_generateBtn">📄 PDF Oluştur</button>
+      </div>
+    </div>
+
+    <div class="accordion" style="margin-bottom:14px;">
+      <div class="accordion-header" id="leaveRecordsAccordionHeader">
+        <span>İzin Kayıtlarını Düzenle / Sil</span>
+        <svg id="leaveRecordsAccordionChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="accordion-body hidden" id="leaveRecordsAccordionBody">
+        <div class="field">
+          <label>Personel Seç</label>
+          <select id="lr_person_select"></select>
+        </div>
+        <div id="lr_records_container"></div>
+      </div>
+    </div>
+
+    <div class="accordion" style="margin-bottom:14px;">
       <div class="accordion-header" id="typeAccordionHeader">
         <span>İzin Türleri</span>
         <svg id="typeAccordionChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -1079,6 +1423,23 @@ function renderAdminPanel(){
     openAdmin();
   });
   document.getElementById("newPersonBtn").addEventListener("click", ()=> openForm(null));
+
+  // İzin raporu (PDF)
+  document.getElementById("pdf_generateBtn").addEventListener("click", generateLeaveReportPdf);
+  document.getElementById("pdfAccordionHeader").addEventListener("click", ()=>{
+    document.getElementById("pdfAccordionBody").classList.toggle("hidden");
+    document.getElementById("pdfAccordionChevron").classList.toggle("accordion-chevron-open");
+  });
+
+  // İzin kayıtlarını düzenle/sil
+  const lrSelect = document.getElementById("lr_person_select");
+  lrSelect.innerHTML = personnel.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");
+  lrSelect.addEventListener("change", renderLeaveRecordsList);
+  renderLeaveRecordsList();
+  document.getElementById("leaveRecordsAccordionHeader").addEventListener("click", ()=>{
+    document.getElementById("leaveRecordsAccordionBody").classList.toggle("hidden");
+    document.getElementById("leaveRecordsAccordionChevron").classList.toggle("accordion-chevron-open");
+  });
 
   const list = document.getElementById("adminList");
   if(personnel.length===0){
