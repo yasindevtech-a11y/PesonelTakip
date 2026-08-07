@@ -427,6 +427,21 @@
       </label>
 
       <div class="field">
+        <label>Kan Grubu</label>
+        <select id="f_bloodType">
+          <option value="">Seçiniz</option>
+          <option value="A Rh+">A Rh+</option>
+          <option value="A Rh-">A Rh-</option>
+          <option value="B Rh+">B Rh+</option>
+          <option value="B Rh-">B Rh-</option>
+          <option value="AB Rh+">AB Rh+</option>
+          <option value="AB Rh-">AB Rh-</option>
+          <option value="0 Rh+">0 Rh+</option>
+          <option value="0 Rh-">0 Rh-</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label>Adı Soyadı</label>
         <input type="text" id="f_name" placeholder="Örn. Ahmet Yılmaz">
       </div>
@@ -450,9 +465,19 @@
           <input type="text" id="f_badge" placeholder="Örn. 010">
         </div>
       </div>
-      <div class="field">
-        <label>Yaka Kartı Geçerlilik Tarihi</label>
-        <input type="date" id="f_badgeExpiry">
+      <div class="field-row">
+        <div class="field">
+          <label>Yaka Kartı Geçerlilik Tarihi</label>
+          <input type="date" id="f_badgeExpiry">
+        </div>
+        <div class="field">
+          <label>Yaka Kartı Durumu</label>
+          <select id="f_badgeArmed">
+            <option value="">Seçiniz</option>
+            <option value="Silahlı">Silahlı</option>
+            <option value="Silahsız">Silahsız</option>
+          </select>
+        </div>
       </div>
       <div class="field">
         <label>Adres</label>
@@ -465,6 +490,66 @@
       <div class="field">
         <label>Yıllık İzin Hakkı (gün)</label>
         <input type="number" id="f_entitlement" value="14" min="0">
+      </div>
+
+      <div class="section-label" style="margin-top:6px;"><span>Ehliyet & Sertifika</span></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Ehliyet</label>
+          <input type="text" id="f_license" placeholder="Örn. Var / Yok">
+        </div>
+        <div class="field">
+          <label>Ehliyet Sınıfı</label>
+          <input type="text" id="f_licenseType" placeholder="Örn. B, D">
+        </div>
+      </div>
+      <div class="field">
+        <label>Sertifika</label>
+        <textarea id="f_certificate" rows="2" placeholder="Örn. Özel Güvenlik Kimlik Kartı, İlkyardım vb."></textarea>
+      </div>
+
+      <div class="section-label" style="margin-top:6px;"><span>Kıyafet Bilgileri — Yazlık</span></div>
+      <div class="field-row">
+        <div class="field">
+          <label>T-Shirt Bedeni</label>
+          <input type="text" id="f_summerTshirt" placeholder="Örn. L">
+        </div>
+        <div class="field">
+          <label>Mont Bedeni</label>
+          <input type="text" id="f_summerCoat" placeholder="Örn. L">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Pantolon Bedeni</label>
+          <input type="text" id="f_summerPants" placeholder="Örn. 48">
+        </div>
+        <div class="field">
+          <label>Ayakkabı No</label>
+          <input type="text" id="f_summerShoes" placeholder="Örn. 42">
+        </div>
+      </div>
+
+      <div class="section-label" style="margin-top:6px;"><span>Kıyafet Bilgileri — Kışlık</span></div>
+      <div class="field-row">
+        <div class="field">
+          <label>T-Shirt Bedeni</label>
+          <input type="text" id="f_winterTshirt" placeholder="Örn. L">
+        </div>
+        <div class="field">
+          <label>Mont Bedeni</label>
+          <input type="text" id="f_winterCoat" placeholder="Örn. L">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Pantolon Bedeni</label>
+          <input type="text" id="f_winterPants" placeholder="Örn. 48">
+        </div>
+        <div class="field">
+          <label>Bot No</label>
+          <input type="text" id="f_winterBoots" placeholder="Örn. 42">
+        </div>
       </div>
 
       <div class="btn-row">
@@ -517,6 +602,13 @@
       <div class="field">
         <label>Bitiş Saati</label>
         <input type="time" id="lv_end_time">
+      </div>
+    </div>
+    <div class="field-row hidden" id="lv_manual_days_row">
+      <div class="field">
+        <label>Hesaba Katılacak Gün Sayısı</label>
+        <input type="number" id="lv_manual_days" min="0" step="0.5">
+        <p style="font-size:11px; color:var(--text-faint); margin-top:5px;">Bazı günler (hafta sonu, dönüş günü vb.) yıllık izinden sayılmıyorsa, gerçekte düşülecek gün sayısını buraya gir. Tarih aralığından bağımsızdır.</p>
       </div>
     </div>
     <div class="field">
@@ -576,8 +668,9 @@ function escapeHtml(str){
 }
 function leaveDurationText(l){
   if(l.startTime && l.endTime) return `${l.startTime} - ${l.endTime}`;
-  if(l.days > 1) return `→ ${fmt(addDays(l.date, l.days-1))} (${l.days} gün)`;
-  return `${l.days} gün`;
+  const countedNote = (l.countedDays != null && l.countedDays !== l.days) ? ` · ${l.countedDays} gün sayıldı` : "";
+  if(l.days > 1) return `→ ${fmt(addDays(l.date, l.days-1))} (${l.days} gün)${countedNote}`;
+  return `${l.days} gün${countedNote}`;
 }
 
 let personnel = [];
@@ -644,11 +737,25 @@ async function loadPersonnel(){
     hire: r.hire,
     entitlement: r.entitlement,
     photo: r.photo,
+    bloodType: r.blood_type,
+    badgeArmed: r.badge_armed,
+    license: r.license,
+    licenseType: r.license_type,
+    certificate: r.certificate,
+    summerTshirt: r.summer_tshirt,
+    summerCoat: r.summer_coat,
+    summerPants: r.summer_pants,
+    summerShoes: r.summer_shoes,
+    winterTshirt: r.winter_tshirt,
+    winterCoat: r.winter_coat,
+    winterPants: r.winter_pants,
+    winterBoots: r.winter_boots,
     leaves: (leaveRows||[]).filter(l=>l.personnel_id===r.id).map(l=>({
       id: l.id, type: l.type, date: l.date, days: l.days,
       startTime: l.start_time ? l.start_time.slice(0,5) : null,
       endTime: l.end_time ? l.end_time.slice(0,5) : null,
-      note: l.note || null
+      note: l.note || null,
+      countedDays: l.counted_days != null ? Number(l.counted_days) : null
     }))
   }));
 }
@@ -768,7 +875,7 @@ function personLeaveStatus(p){
   }
   return { onLeave:false };
 }
-function totalUsedDays(p){ return p.leaves.filter(l=>isAnnual(l.type)).reduce((s,l)=>s+Number(l.days),0); }
+function totalUsedDays(p){ return p.leaves.filter(l=>isAnnual(l.type)).reduce((s,l)=>s+Number(l.countedDays != null ? l.countedDays : l.days),0); }
 
 function personCardEl(p){
   const status = personLeaveStatus(p);
@@ -901,10 +1008,19 @@ function renderHome(){
     badgeWarnings.forEach(p=> container.appendChild(personCardEl(p)));
   }
 
+  // Yaklaşan faaliyetler — hangi ay gezilirse gezilsin her zaman görünür
+  const upcoming = collectUpcomingLeaveEntries();
+  if(upcoming.length>0){
+    const upcomingHeader = sectionHeaderEl("🔜 Yaklaşan Faaliyetler", upcoming.length, false);
+    if(badgeWarnings.length>0) upcomingHeader.style.marginTop = "18px";
+    container.appendChild(upcomingHeader);
+    upcoming.forEach(({p,l})=> container.appendChild(leaveEntryCardEl(p,l)));
+  }
+
   // Ay navigasyonu
   const monthNav = document.createElement("div");
   monthNav.className = "month-nav";
-  if(badgeWarnings.length>0) monthNav.style.marginTop = "18px";
+  if(badgeWarnings.length>0 || upcoming.length>0) monthNav.style.marginTop = "18px";
   monthNav.innerHTML = `
     <div class="icon-btn" id="prevMonthBtn" style="width:34px;height:34px; font-size:18px;">‹</div>
     <span class="month-nav-label">${MONTH_NAMES[homeViewMonthIdx]} ${homeViewYear}</span>
@@ -937,15 +1053,6 @@ function renderHome(){
     if(homeViewMonthIdx > 11){ homeViewMonthIdx = 0; homeViewYear++; }
     renderHome();
   });
-
-  // Yaklaşan izinler — hangi ay gezilirse gezilsin her zaman görünür
-  const upcoming = collectUpcomingLeaveEntries();
-  if(upcoming.length>0){
-    const upcomingHeader = sectionHeaderEl("🔜 Yaklaşan Faaliyetler", upcoming.length, false);
-    upcomingHeader.style.marginTop = "18px";
-    container.appendChild(upcomingHeader);
-    upcoming.forEach(({p,l})=> container.appendChild(leaveEntryCardEl(p,l)));
-  }
 }
 document.getElementById("searchInput").addEventListener("input", renderHome);
 
@@ -957,6 +1064,10 @@ function openForm(personId){
   const title = document.getElementById("formTitle");
   const preview = document.getElementById("photoPreview");
   const placeholder = document.getElementById("photoPlaceholder");
+
+  const NEW_TEXT_FIELDS = ["f_bloodType","f_badgeArmed","f_license","f_licenseType","f_certificate",
+    "f_summerTshirt","f_summerCoat","f_summerPants","f_summerShoes",
+    "f_winterTshirt","f_winterCoat","f_winterPants","f_winterBoots"];
 
   if(personId){
     const p = personnel.find(x=>x.id===personId);
@@ -970,11 +1081,25 @@ function openForm(personId){
     document.getElementById("f_address").value = p.address;
     document.getElementById("f_hire").value = p.hire;
     document.getElementById("f_entitlement").value = p.entitlement;
+    document.getElementById("f_bloodType").value = p.bloodType || "";
+    document.getElementById("f_badgeArmed").value = p.badgeArmed || "";
+    document.getElementById("f_license").value = p.license || "";
+    document.getElementById("f_licenseType").value = p.licenseType || "";
+    document.getElementById("f_certificate").value = p.certificate || "";
+    document.getElementById("f_summerTshirt").value = p.summerTshirt || "";
+    document.getElementById("f_summerCoat").value = p.summerCoat || "";
+    document.getElementById("f_summerPants").value = p.summerPants || "";
+    document.getElementById("f_summerShoes").value = p.summerShoes || "";
+    document.getElementById("f_winterTshirt").value = p.winterTshirt || "";
+    document.getElementById("f_winterCoat").value = p.winterCoat || "";
+    document.getElementById("f_winterPants").value = p.winterPants || "";
+    document.getElementById("f_winterBoots").value = p.winterBoots || "";
     if(p.photo){ preview.src = p.photo; preview.classList.remove("hidden"); placeholder.classList.add("hidden"); pendingPhoto = p.photo; }
     else { preview.classList.add("hidden"); placeholder.classList.remove("hidden"); }
   } else {
     title.textContent = "Yeni Personel Kaydı";
     ["f_name","f_phone","f_title","f_park","f_badge","f_badgeExpiry","f_address","f_hire"].forEach(id=>document.getElementById(id).value="");
+    NEW_TEXT_FIELDS.forEach(id=>document.getElementById(id).value="");
     document.getElementById("f_entitlement").value = 14;
     preview.classList.add("hidden"); placeholder.classList.remove("hidden");
   }
@@ -1019,7 +1144,20 @@ document.getElementById("saveBtn").addEventListener("click", async ()=>{
     address: document.getElementById("f_address").value.trim() || null,
     hire: document.getElementById("f_hire").value || null,
     entitlement: Number(document.getElementById("f_entitlement").value) || 0,
-    photo: pendingPhoto
+    photo: pendingPhoto,
+    blood_type: document.getElementById("f_bloodType").value || null,
+    badge_armed: document.getElementById("f_badgeArmed").value || null,
+    license: document.getElementById("f_license").value.trim() || null,
+    license_type: document.getElementById("f_licenseType").value.trim() || null,
+    certificate: document.getElementById("f_certificate").value.trim() || null,
+    summer_tshirt: document.getElementById("f_summerTshirt").value.trim() || null,
+    summer_coat: document.getElementById("f_summerCoat").value.trim() || null,
+    summer_pants: document.getElementById("f_summerPants").value.trim() || null,
+    summer_shoes: document.getElementById("f_summerShoes").value.trim() || null,
+    winter_tshirt: document.getElementById("f_winterTshirt").value.trim() || null,
+    winter_coat: document.getElementById("f_winterCoat").value.trim() || null,
+    winter_pants: document.getElementById("f_winterPants").value.trim() || null,
+    winter_boots: document.getElementById("f_winterBoots").value.trim() || null
   };
 
   const saveBtn = document.getElementById("saveBtn");
@@ -1094,13 +1232,39 @@ function renderPersonModal(){
     content.innerHTML = `
       ${badgeWarnBanner}
       <div class="info-grid">
+        <div class="info-cell"><div class="k">Kan Grubu</div><div class="v">${p.bloodType || "-"}</div></div>
         <div class="info-cell"><div class="k">Telefon</div><div class="v">${p.phone || "-"}</div></div>
         <div class="info-cell"><div class="k">İşe Giriş</div><div class="v">${fmt(p.hire)}</div></div>
         <div class="info-cell"><div class="k">Sicil / Yaka No</div><div class="v">${p.badge || "-"}</div></div>
         <div class="info-cell"><div class="k">Yaka Kartı Geçerlilik</div><div class="v" style="${badge.has && badge.warn ? `color:${bColor};` : ''}">${p.badgeExpiry ? fmt(p.badgeExpiry) : "-"}</div></div>
+        <div class="info-cell"><div class="k">Yaka Kartı Durumu</div><div class="v">${p.badgeArmed || "-"}</div></div>
         <div class="info-cell full"><div class="k">Adres</div><div class="v">${p.address || "-"}</div></div>
       </div>
-      <div class="stat-row">
+
+      <div class="section-label" style="margin-top:14px;"><span>Ehliyet & Sertifika</span></div>
+      <div class="info-grid">
+        <div class="info-cell"><div class="k">Ehliyet</div><div class="v">${p.license || "-"}</div></div>
+        <div class="info-cell"><div class="k">Ehliyet Sınıfı</div><div class="v">${p.licenseType || "-"}</div></div>
+        <div class="info-cell full"><div class="k">Sertifika</div><div class="v">${p.certificate || "-"}</div></div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;"><span>Kıyafet Bilgileri — Yazlık</span></div>
+      <div class="info-grid">
+        <div class="info-cell"><div class="k">T-Shirt</div><div class="v">${p.summerTshirt || "-"}</div></div>
+        <div class="info-cell"><div class="k">Mont</div><div class="v">${p.summerCoat || "-"}</div></div>
+        <div class="info-cell"><div class="k">Pantolon</div><div class="v">${p.summerPants || "-"}</div></div>
+        <div class="info-cell"><div class="k">Ayakkabı No</div><div class="v">${p.summerShoes || "-"}</div></div>
+      </div>
+
+      <div class="section-label" style="margin-top:14px;"><span>Kıyafet Bilgileri — Kışlık</span></div>
+      <div class="info-grid">
+        <div class="info-cell"><div class="k">T-Shirt</div><div class="v">${p.winterTshirt || "-"}</div></div>
+        <div class="info-cell"><div class="k">Mont</div><div class="v">${p.winterCoat || "-"}</div></div>
+        <div class="info-cell"><div class="k">Pantolon</div><div class="v">${p.winterPants || "-"}</div></div>
+        <div class="info-cell"><div class="k">Bot No</div><div class="v">${p.winterBoots || "-"}</div></div>
+      </div>
+
+      <div class="stat-row" style="margin-top:14px;">
         <div class="stat-card good"><div class="label">Yıllık Hak</div><div class="num">${p.entitlement}</div></div>
         <div class="stat-card warn"><div class="label">Kullanılan (Yıllık)</div><div class="num">${used}</div></div>
         <div class="stat-card"><div class="label">Kalan (Yıllık)</div><div class="num">${remaining}</div></div>
@@ -1174,10 +1338,23 @@ let editingLeaveId = null;
 function toggleLeaveModalFields(){
   const type = document.getElementById("lv_type").value;
   const hourly = isHourly(type);
+  const annual = isAnnual(type);
   document.getElementById("lv_date_row").classList.toggle("hidden", !hourly);
   document.getElementById("lv_time_row").classList.toggle("hidden", !hourly);
   document.getElementById("lv_range_row").classList.toggle("hidden", hourly);
+  document.getElementById("lv_manual_days_row").classList.toggle("hidden", !annual);
 }
+function suggestAnnualDaysFromRange(){
+  const type = document.getElementById("lv_type").value;
+  if(!isAnnual(type)) return;
+  const startDate = document.getElementById("lv_start_date").value;
+  const endDate = document.getElementById("lv_end_date").value;
+  if(!startDate || !endDate || endDate < startDate) return;
+  const days = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+  document.getElementById("lv_manual_days").value = days;
+}
+document.getElementById("lv_start_date").addEventListener("change", suggestAnnualDaysFromRange);
+document.getElementById("lv_end_date").addEventListener("change", suggestAnnualDaysFromRange);
 
 function openLeaveModal(personId, existingLeave){
   if(!isAdminAuthenticated){ return; }
@@ -1186,7 +1363,7 @@ function openLeaveModal(personId, existingLeave){
 
   const sel = document.getElementById("lv_type");
   sel.innerHTML = leaveTypes.map(t=>`<option value="${t}">${t}</option>`).join("");
-  sel.onchange = toggleLeaveModalFields;
+  sel.onchange = ()=>{ toggleLeaveModalFields(); suggestAnnualDaysFromRange(); };
 
   document.getElementById("lv_modal_title").textContent = existingLeave ? "İzni Düzenle" : "Yeni İzin Ekle";
   document.getElementById("lv_save").textContent = existingLeave ? "Güncelle" : "Ekle";
@@ -1199,6 +1376,7 @@ function openLeaveModal(personId, existingLeave){
     document.getElementById("lv_start_time").value = existingLeave.startTime || "";
     document.getElementById("lv_end_time").value = existingLeave.endTime || "";
     document.getElementById("lv_note").value = existingLeave.note || "";
+    document.getElementById("lv_manual_days").value = existingLeave.countedDays != null ? existingLeave.countedDays : (existingLeave.days || 1);
   } else {
     document.getElementById("lv_date").value = isoToday();
     document.getElementById("lv_start_date").value = isoToday();
@@ -1206,6 +1384,7 @@ function openLeaveModal(personId, existingLeave){
     document.getElementById("lv_start_time").value = "";
     document.getElementById("lv_end_time").value = "";
     document.getElementById("lv_note").value = "";
+    document.getElementById("lv_manual_days").value = 1;
   }
   toggleLeaveModalFields();
   leaveModal.classList.add("open");
@@ -1227,16 +1406,24 @@ document.getElementById("lv_save").addEventListener("click", async ()=>{
     payload.start_time = startTime;
     payload.end_time = endTime;
     payload.days = 0;
+    payload.counted_days = null;
   } else {
     const startDate = document.getElementById("lv_start_date").value;
     const endDate = document.getElementById("lv_end_date").value;
     if(!startDate || !endDate){ alert("Lütfen başlangıç ve bitiş tarihini seçin."); return; }
     if(endDate < startDate){ alert("Bitiş tarihi, başlangıç tarihinden önce olamaz."); return; }
-    const days = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+    const calendarDays = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
     payload.date = startDate;
-    payload.days = days;
+    payload.days = calendarDays;
     payload.start_time = null;
     payload.end_time = null;
+    if(isAnnual(type)){
+      const manualDays = Number(document.getElementById("lv_manual_days").value);
+      if(manualDays < 0 || document.getElementById("lv_manual_days").value === ""){ alert("Lütfen hesaba katılacak gün sayısını girin."); return; }
+      payload.counted_days = manualDays;
+    } else {
+      payload.counted_days = null;
+    }
   }
 
   const saveLvBtn = document.getElementById("lv_save");
