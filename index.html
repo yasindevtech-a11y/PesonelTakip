@@ -582,18 +582,26 @@ function leaveDurationText(l){
 
 let personnel = [];
 
-const BADGE_WARN_DAYS = 180;
+const BADGE_RED_DAYS = 180;
+const BADGE_YELLOW_DAYS = 300;
 function badgeStatus(p){
-  if(!p.badgeExpiry) return { has:false };
+  if(!p.badgeExpiry) return { has:false, level:"none" };
   const today = new Date(isoToday());
   const expiry = new Date(p.badgeExpiry);
   const daysLeft = Math.ceil((expiry - today) / 86400000);
+  let level = "none";
+  if(daysLeft < BADGE_RED_DAYS) level = "red";
+  else if(daysLeft < BADGE_YELLOW_DAYS) level = "yellow";
   return {
     has: true,
     daysLeft,
     expired: daysLeft < 0,
-    warn: daysLeft < BADGE_WARN_DAYS
+    level,
+    warn: level !== "none"
   };
+}
+function badgeLevelColor(level){
+  return level==="red" ? "var(--red)" : (level==="yellow" ? "var(--amber)" : "var(--text-dim)");
 }
 
 let currentDetailId = null;
@@ -770,7 +778,7 @@ function personCardEl(p){
   const sub = [p.title, p.park, p.badge ? `Sicil: ${p.badge}` : null].filter(Boolean).join(" · ") || (p.phone || "-");
   let badgeWarnHtml = "";
   if(badge.has && badge.warn){
-    badgeWarnHtml = `<div class="p-card-sub" style="color:var(--red); margin-top:3px;">⚠ Yaka kartı ${badge.expired ? "süresi doldu" : `${badge.daysLeft} gün içinde doluyor`}</div>`;
+    badgeWarnHtml = `<div class="p-card-sub" style="color:${badgeLevelColor(badge.level)}; margin-top:3px;">⚠ Yaka kartı ${badge.expired ? "süresi doldu" : `${badge.daysLeft} gün içinde doluyor`}</div>`;
   }
   card.innerHTML = `
     <div class="avatar">${p.photo ? `<img src="${p.photo}">` : initials(p.name)}</div>
@@ -830,7 +838,7 @@ function collectMonthLeaveEntries(year, monthIdx){
       if(leaveOverlapsRange(l, start, end)) entries.push({ p, l });
     });
   });
-  entries.sort((a,b)=> a.l.date.localeCompare(b.l.date));
+  entries.sort((a,b)=> b.l.date.localeCompare(a.l.date));
   return entries;
 }
 
@@ -905,7 +913,7 @@ function renderHome(){
   container.appendChild(monthNav);
 
   const monthEntries = collectMonthLeaveEntries(homeViewYear, homeViewMonthIdx);
-  const monthHeader = sectionHeaderEl("Bu Ayki İzinler", monthEntries.length, false);
+  const monthHeader = sectionHeaderEl("Bu Ayki Faaliyetler", monthEntries.length, false);
   monthHeader.style.marginTop = "6px";
   container.appendChild(monthHeader);
 
@@ -933,7 +941,7 @@ function renderHome(){
   // Yaklaşan izinler — hangi ay gezilirse gezilsin her zaman görünür
   const upcoming = collectUpcomingLeaveEntries();
   if(upcoming.length>0){
-    const upcomingHeader = sectionHeaderEl("🔜 Yaklaşan İzinler", upcoming.length, false);
+    const upcomingHeader = sectionHeaderEl("🔜 Yaklaşan Faaliyetler", upcoming.length, false);
     upcomingHeader.style.marginTop = "18px";
     container.appendChild(upcomingHeader);
     upcoming.forEach(({p,l})=> container.appendChild(leaveEntryCardEl(p,l)));
@@ -991,6 +999,16 @@ document.getElementById("photoInput").addEventListener("change", (e)=>{
 document.getElementById("saveBtn").addEventListener("click", async ()=>{
   const name = document.getElementById("f_name").value.trim();
   if(!name){ alert("Lütfen adı soyadı girin."); return; }
+
+  const normalizedName = name.toLocaleLowerCase("tr");
+  const duplicate = personnel.find(p =>
+    p.id !== editingPersonId && p.name.trim().toLocaleLowerCase("tr") === normalizedName
+  );
+  if(duplicate){
+    alert(`"${duplicate.name}" adında bir personel zaten kayıtlı. Aynı kişiyi tekrar kaydetmemek için lütfen mevcut kaydı kullanın veya düzenleyin.`);
+    return;
+  }
+
   const payload = {
     name,
     phone: document.getElementById("f_phone").value.trim() || null,
@@ -1062,10 +1080,13 @@ function renderPersonModal(){
   if(currentDetailTab === "genel"){
     const used = totalUsedDays(p);
     const remaining = p.entitlement - used;
+    const bColor = badgeLevelColor(badge.level);
+    const bBg = badge.level==="red" ? "rgba(229,72,77,0.1)" : "rgba(242,166,90,0.12)";
+    const bBorder = badge.level==="red" ? "rgba(229,72,77,0.3)" : "rgba(242,166,90,0.35)";
     const badgeWarnBanner = (badge.has && badge.warn) ? `
-      <div style="display:flex; align-items:center; gap:10px; background:rgba(229,72,77,0.1); border:1px solid rgba(229,72,77,0.3); border-radius:12px; padding:12px 14px; margin-bottom:16px;">
+      <div style="display:flex; align-items:center; gap:10px; background:${bBg}; border:1px solid ${bBorder}; border-radius:12px; padding:12px 14px; margin-bottom:16px;">
         <span style="font-size:18px;">⚠</span>
-        <div style="font-size:13px; color:var(--red); font-weight:600;">
+        <div style="font-size:13px; color:${bColor}; font-weight:600;">
           Yaka kartı ${badge.expired ? `süresi ${Math.abs(badge.daysLeft)} gün önce doldu` : `${badge.daysLeft} gün içinde doluyor`} (${fmt(p.badgeExpiry)})
         </div>
       </div>` : "";
@@ -1076,7 +1097,7 @@ function renderPersonModal(){
         <div class="info-cell"><div class="k">Telefon</div><div class="v">${p.phone || "-"}</div></div>
         <div class="info-cell"><div class="k">İşe Giriş</div><div class="v">${fmt(p.hire)}</div></div>
         <div class="info-cell"><div class="k">Sicil / Yaka No</div><div class="v">${p.badge || "-"}</div></div>
-        <div class="info-cell"><div class="k">Yaka Kartı Geçerlilik</div><div class="v" style="${badge.has && badge.warn ? 'color:var(--red);' : ''}">${p.badgeExpiry ? fmt(p.badgeExpiry) : "-"}</div></div>
+        <div class="info-cell"><div class="k">Yaka Kartı Geçerlilik</div><div class="v" style="${badge.has && badge.warn ? `color:${bColor};` : ''}">${p.badgeExpiry ? fmt(p.badgeExpiry) : "-"}</div></div>
         <div class="info-cell full"><div class="k">Adres</div><div class="v">${p.address || "-"}</div></div>
       </div>
       <div class="stat-row">
@@ -1444,23 +1465,17 @@ function renderAdminPanel(){
       <button class="btn btn-ghost" id="adminLogoutBtn" style="padding:8px 14px; font-size:12.5px;">Çıkış Yap</button>
     </div>
 
-    <button class="btn btn-primary btn-block" id="newPersonBtn" style="margin-bottom:20px;">+ Yeni Personel Kaydı</button>
-
-    <div class="section-label"><span>Tüm Personel</span><span class="count-pill">${personnel.length}</span></div>
-    <div id="adminList" style="margin-bottom:20px;"></div>
-
     <div class="accordion" style="margin-bottom:14px;">
-      <div class="accordion-header" id="bulkEntitlementAccordionHeader">
-        <span>Toplu Yıllık İzin Hakkı Ekle</span>
-        <svg id="bulkEntitlementAccordionChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <div class="accordion-header" id="personnelAccordionHeader">
+        <span>Tüm Personel</span>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="count-pill">${personnel.length}</span>
+          <svg id="personnelAccordionChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </span>
       </div>
-      <div class="accordion-body hidden" id="bulkEntitlementAccordionBody">
-        <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Yeni yıl başında ya da toplu hak yenilemesinde, tüm personelin yıllık izin hakkına aynı anda gün ekler. Kullanılan izin geçmişine dokunmaz, sadece hakkı artırır.</p>
-        <div class="field">
-          <label>Eklenecek Gün Sayısı</label>
-          <input type="number" id="bulk_entitlement_days" min="1" value="14">
-        </div>
-        <button class="btn btn-primary btn-block" id="bulk_entitlement_btn">Tüm Personele Ekle (${personnel.length} kişi)</button>
+      <div class="accordion-body hidden" id="personnelAccordionBody">
+        <button class="btn btn-primary btn-block" id="newPersonBtn" style="margin-bottom:16px;">+ Yeni Personel Kaydı</button>
+        <div id="adminList"></div>
       </div>
     </div>
 
@@ -1540,32 +1555,10 @@ function renderAdminPanel(){
   });
   document.getElementById("newPersonBtn").addEventListener("click", ()=> openForm(null));
 
-  // Toplu yıllık izin hakkı ekle
-  document.getElementById("bulkEntitlementAccordionHeader").addEventListener("click", ()=>{
-    document.getElementById("bulkEntitlementAccordionBody").classList.toggle("hidden");
-    document.getElementById("bulkEntitlementAccordionChevron").classList.toggle("accordion-chevron-open");
-  });
-  document.getElementById("bulk_entitlement_btn").addEventListener("click", async ()=>{
-    const days = Number(document.getElementById("bulk_entitlement_days").value);
-    if(!days || days <= 0){ alert("Lütfen geçerli, pozitif bir gün sayısı girin."); return; }
-    if(personnel.length===0){ alert("Kayıtlı personel yok."); return; }
-    if(!confirm(`${personnel.length} personelin yıllık izin hakkına ${days} gün eklenecek. Onaylıyor musunuz?`)) return;
-
-    const btn = document.getElementById("bulk_entitlement_btn");
-    btn.disabled = true; btn.textContent = "Ekleniyor...";
-    let errorCount = 0;
-    for(const p of personnel){
-      const { error } = await db.from("personnel").update({ entitlement: p.entitlement + days }).eq("id", p.id);
-      if(error) errorCount++;
-    }
-    await loadPersonnel();
-    renderAdminPanel();
-    renderHome();
-    if(errorCount > 0){
-      alert(`${errorCount} personelde hata oluştu, diğerleri güncellendi.`);
-    } else {
-      alert("Tüm personelin yıllık izin hakkı güncellendi.");
-    }
+  // Tüm Personel açılır/kapanır liste
+  document.getElementById("personnelAccordionHeader").addEventListener("click", ()=>{
+    document.getElementById("personnelAccordionBody").classList.toggle("hidden");
+    document.getElementById("personnelAccordionChevron").classList.toggle("accordion-chevron-open");
   });
 
   // İzin raporu (PDF)
@@ -1599,7 +1592,7 @@ function renderAdminPanel(){
         <div style="min-width:0;">
           <div style="font-size:13.5px; font-weight:600;">${p.name}</div>
           <div style="font-size:11.5px; color:var(--text-dim);">${p.title || '-'} · Sicil: ${p.badge||'-'}</div>
-          ${badge.has && badge.warn ? `<div style="font-size:11px; color:var(--red); margin-top:2px;">⚠ Yaka kartı ${badge.expired ? 'süresi doldu' : badge.daysLeft+' gün kaldı'}</div>` : ""}
+          ${badge.has && badge.warn ? `<div style="font-size:11px; color:${badgeLevelColor(badge.level)}; margin-top:2px;">⚠ Yaka kartı ${badge.expired ? 'süresi doldu' : badge.daysLeft+' gün kaldı'}</div>` : ""}
         </div>
       </div>
       <div style="display:flex; gap:6px; flex-shrink:0;">
